@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -11,25 +11,91 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import Icon from '@/components/ui/icon';
 
+const API_URL = 'https://functions.poehali.dev/764e4b68-3062-40ac-886c-8fd380508455';
+
 const Index = () => {
   const [mutDuration, setMutDuration] = useState('60');
   const [spamWords, setSpamWords] = useState('реклама\nспам\nскидка\nбесплатно');
   const [badWords, setBadWords] = useState('');
+  const [statsData, setStatsData] = useState([
+    { label: 'Заблокировано сегодня', value: '0', icon: 'UserX', color: 'text-destructive' },
+    { label: 'В муте сейчас', value: '0', icon: 'MessageSquareOff', color: 'text-orange-500' },
+    { label: 'Предупреждений', value: '0', icon: 'AlertTriangle', color: 'text-yellow-500' },
+    { label: 'Очищено сообщений', value: '0', icon: 'Trash2', color: 'text-primary' }
+  ]);
+  const [recentLogs, setRecentLogs] = useState<any[]>([]);
+  const [dailyStats, setDailyStats] = useState<any[]>([]);
 
-  const statsData = [
-    { label: 'Заблокировано сегодня', value: '12', icon: 'UserX', color: 'text-destructive' },
-    { label: 'В муте сейчас', value: '5', icon: 'MessageSquareOff', color: 'text-orange-500' },
-    { label: 'Предупреждений', value: '28', icon: 'AlertTriangle', color: 'text-yellow-500' },
-    { label: 'Очищено сообщений', value: '156', icon: 'Trash2', color: 'text-primary' }
-  ];
+  useEffect(() => {
+    fetchStats();
+    fetchLogs();
+    fetchDailyStats();
+  }, []);
 
-  const recentLogs = [
-    { action: 'Мут', user: '@user123', reason: 'Мат в сообщении', time: '2 мин назад', type: 'mute' },
-    { action: 'Кик', user: '@spammer456', reason: 'Спам (3 нарушение)', time: '15 мин назад', type: 'kick' },
-    { action: 'Предупреждение', user: '@newbie789', reason: 'Нецензурная лексика', time: '28 мин назад', type: 'warn' },
-    { action: 'Удаление', user: '@advertiser321', reason: 'Реклама', time: '1 ч назад', type: 'delete' },
-    { action: 'Мут', user: '@toxic999', reason: 'Оскорбления', time: '2 ч назад', type: 'mute' }
-  ];
+  const fetchStats = async () => {
+    try {
+      const response = await fetch(`${API_URL}?action=stats`);
+      const data = await response.json();
+      setStatsData([
+        { label: 'Заблокировано сегодня', value: String(data.today_bans || 0), icon: 'UserX', color: 'text-destructive' },
+        { label: 'В муте сейчас', value: String(data.current_mutes || 0), icon: 'MessageSquareOff', color: 'text-orange-500' },
+        { label: 'Предупреждений', value: String(data.today_warns || 0), icon: 'AlertTriangle', color: 'text-yellow-500' },
+        { label: 'Очищено сообщений', value: String(data.today_removes || 0), icon: 'Trash2', color: 'text-primary' }
+      ]);
+    } catch (error) {
+      console.error('Failed to fetch stats:', error);
+    }
+  };
+
+  const fetchLogs = async () => {
+    try {
+      const response = await fetch(`${API_URL}?action=logs`);
+      const data = await response.json();
+      const logs = data.logs.slice(0, 5).map((log: any) => ({
+        action: getActionLabel(log.action),
+        user: log.username,
+        reason: log.reason,
+        time: formatTime(log.created_at),
+        type: log.action
+      }));
+      setRecentLogs(logs);
+    } catch (error) {
+      console.error('Failed to fetch logs:', error);
+    }
+  };
+
+  const fetchDailyStats = async () => {
+    try {
+      const response = await fetch(`${API_URL}?action=daily-stats`);
+      const data = await response.json();
+      setDailyStats(data.daily_stats || []);
+    } catch (error) {
+      console.error('Failed to fetch daily stats:', error);
+    }
+  };
+
+  const getActionLabel = (action: string) => {
+    const labels: any = {
+      'mute': 'Мут',
+      'kick': 'Кик',
+      'warn': 'Предупреждение',
+      'remove': 'Удаление'
+    };
+    return labels[action] || action;
+  };
+
+  const formatTime = (timestamp: string) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 60) return `${diffMins} мин назад`;
+    if (diffHours < 24) return `${diffHours} ч назад`;
+    return `${diffDays} д назад`;
+  };
 
   const getActionColor = (type: string) => {
     switch (type) {
@@ -37,6 +103,7 @@ const Index = () => {
       case 'mute': return 'bg-orange-500/20 text-orange-500';
       case 'warn': return 'bg-yellow-500/20 text-yellow-500';
       case 'delete': return 'bg-primary/20 text-primary';
+      case 'remove': return 'bg-primary/20 text-primary';
       default: return 'bg-muted text-muted-foreground';
     }
   };
@@ -74,8 +141,12 @@ const Index = () => {
           ))}
         </div>
 
-        <Tabs defaultValue="logs" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4">
+        <Tabs defaultValue="analytics" className="space-y-4">
+          <TabsList className="grid w-full grid-cols-5">
+            <TabsTrigger value="analytics">
+              <Icon name="BarChart3" size={16} className="mr-2" />
+              Аналитика
+            </TabsTrigger>
             <TabsTrigger value="logs">
               <Icon name="ScrollText" size={16} className="mr-2" />
               Логи
@@ -93,6 +164,138 @@ const Index = () => {
               Команды
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="analytics" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Статистика нарушений за последние 30 дней</CardTitle>
+                <CardDescription>
+                  График активности модерации по дням
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-8">
+                  {dailyStats.slice(0, 14).reverse().map((stat, index) => {
+                    const total = stat.bans + stat.mutes + stat.warns + stat.removes;
+                    const maxValue = Math.max(...dailyStats.map((s: any) => s.bans + s.mutes + s.warns + s.removes));
+                    
+                    return (
+                      <div key={index} className="space-y-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground min-w-[100px]">
+                            {new Date(stat.date).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })}
+                          </span>
+                          <div className="flex-1 mx-4">
+                            <div className="h-8 bg-muted rounded-lg overflow-hidden flex">
+                              <div 
+                                className="bg-destructive transition-all"
+                                style={{ width: `${(stat.bans / maxValue) * 100}%` }}
+                                title={`Баны: ${stat.bans}`}
+                              />
+                              <div 
+                                className="bg-orange-500 transition-all"
+                                style={{ width: `${(stat.mutes / maxValue) * 100}%` }}
+                                title={`Муты: ${stat.mutes}`}
+                              />
+                              <div 
+                                className="bg-yellow-500 transition-all"
+                                style={{ width: `${(stat.warns / maxValue) * 100}%` }}
+                                title={`Предупреждения: ${stat.warns}`}
+                              />
+                              <div 
+                                className="bg-primary transition-all"
+                                style={{ width: `${(stat.removes / maxValue) * 100}%` }}
+                                title={`Удаления: ${stat.removes}`}
+                              />
+                            </div>
+                          </div>
+                          <span className="font-semibold min-w-[40px] text-right">{total}</span>
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground ml-[100px]">
+                          <span className="flex items-center gap-1">
+                            <div className="w-3 h-3 rounded bg-destructive" />
+                            Баны: {stat.bans}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <div className="w-3 h-3 rounded bg-orange-500" />
+                            Муты: {stat.mutes}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <div className="w-3 h-3 rounded bg-yellow-500" />
+                            Варны: {stat.warns}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <div className="w-3 h-3 rounded bg-primary" />
+                            Удалено: {stat.removes}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Топ нарушителей</CardTitle>
+                  <CardDescription>Пользователи с наибольшим количеством нарушений</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {recentLogs.slice(0, 5).map((log, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-destructive/20 flex items-center justify-center text-sm font-bold">
+                            {index + 1}
+                          </div>
+                          <span className="font-medium">{log.user}</span>
+                        </div>
+                        <Badge variant="outline">{log.action}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Распределение нарушений</CardTitle>
+                  <CardDescription>По типам за весь период</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {[
+                      { label: 'Баны', value: dailyStats.reduce((sum: number, s: any) => sum + s.bans, 0), color: 'bg-destructive' },
+                      { label: 'Муты', value: dailyStats.reduce((sum: number, s: any) => sum + s.mutes, 0), color: 'bg-orange-500' },
+                      { label: 'Предупреждения', value: dailyStats.reduce((sum: number, s: any) => sum + s.warns, 0), color: 'bg-yellow-500' },
+                      { label: 'Удалено сообщений', value: dailyStats.reduce((sum: number, s: any) => sum + s.removes, 0), color: 'bg-primary' }
+                    ].map((item, index) => {
+                      const total = dailyStats.reduce((sum: number, s: any) => sum + s.bans + s.mutes + s.warns + s.removes, 0);
+                      const percentage = total > 0 ? (item.value / total) * 100 : 0;
+                      
+                      return (
+                        <div key={index} className="space-y-2">
+                          <div className="flex items-center justify-between text-sm">
+                            <span>{item.label}</span>
+                            <span className="font-semibold">{item.value}</span>
+                          </div>
+                          <div className="h-3 bg-muted rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full ${item.color} transition-all`}
+                              style={{ width: `${percentage}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-muted-foreground">{percentage.toFixed(1)}%</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
 
           <TabsContent value="logs" className="space-y-4">
             <Card>
